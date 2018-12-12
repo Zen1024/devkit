@@ -33,10 +33,10 @@ const (
 	Llongfile                     // full file name and line number: /a/b/c/d.go:23
 	Lshortfile                    // final file name element and line number: d.go:23. overrides Llongfile
 	LUTC                          // if Ldate or Ltime is set, use UTC rather than the local time zone
-	LstdFlags     = Ldate | Ltime // initial values for the standard logger
 	Lsplith                       // split by hour
 	Lsplitm                       // split by minute
 	Lsplitd                       // split by day
+	LstdFlags     = Ldate | Ltime // initial values for the standard logger
 )
 
 var logger = NewDefault()
@@ -47,6 +47,7 @@ type Logger struct {
 	maxsize    int
 	flag       int
 	lastmetric int //last hour or last minute or last day
+	lastidx    int
 	fname      string
 	sync.Mutex
 	raw *log.Logger
@@ -78,6 +79,10 @@ func SetLevel(level int) {
 
 func SetMaxSize(max int) {
 	logger.SetMaxSize(max)
+}
+
+func SetFile(fname string) {
+	logger.SetFile(fname)
 }
 
 func (l *Logger) SetFlags(flag int) {
@@ -161,18 +166,19 @@ func (l *Logger) rotate() error {
 		return nil
 	}
 
-	if l.maxsize == 0 && l.flag < 128 {
+	if l.maxsize == 0 && l.flag < 64 {
 		return nil
 	}
+
+	l.Lock()
+	defer l.Unlock()
 
 	mtime := info.ModTime()
 	name := info.Name()
 	size := info.Size()
 	now := time.Now()
 	now_date := now.Format("2006-01-02")
-	l_date := mtime.Format("2006-01-02")
 	m, h := now.Minute(), now.Hour()
-	lm, lh := mtime.Minute(), mtime.Hour()
 
 	namearr := strings.Split(name, ".")
 	suffix := namearr[len(namearr)-1]
@@ -189,17 +195,22 @@ func (l *Logger) rotate() error {
 			} else if l.flag&Lsplitm == Lsplitm {
 				tprefix = fmt.Sprintf("%s.%d.%d", now_date, h, m)
 			}
+			i := l.lastidx + 1
 			for {
-				i := 1
-				new_name := fmt.Sprintf("%s.%s.%4d.%s", prefix, tprefix, i, suffix)
-				_, err := os.Open(new_name)
-				if err == os.ErrNotExist {
+				var new_name string
+				if tprefix != "" {
+					new_name = fmt.Sprintf("%s.%s.%04d.%s", prefix, tprefix, i, suffix)
+				} else {
+					new_name = fmt.Sprintf("%s.%04d.%s", prefix, i, suffix)
+				}
+				if _, err := os.Stat(new_name); os.IsNotExist(err) {
 					f.Sync()
 					f.Close()
 					os.Rename(name, new_name)
 					f, _ = os.Create(l.fname)
 					l.output = f
 					l.raw.SetOutput(f)
+					l.lastidx = i
 					return nil
 				}
 				i++
@@ -209,23 +220,42 @@ func (l *Logger) rotate() error {
 	//split by time
 	tprefix := ""
 	rotate := false
-	if l.flag&Lsplitd == Lsplitd {
-		if now_date != l_date {
-			rotate = true
-		}
-		tprefix = now_date
-	} else if l.flag&Lsplith == Lsplith {
-		if now_date != l_date || h != lh {
-			rotate = true
-		}
-		tprefix = fmt.Sprintf("%s.%d", now_date, h)
-	} else if l.flag&Lsplitm == Lsplitm {
-		if now_date != l_date || h != lh || m != lm {
-			rotate = true
-		}
-		tprefix = fmt.Sprintf("%s.%d.%d", now_date, h, m)
-	}
 
+	if l.flag&Lsplitd == Lsplitd {
+		if now.Day() != l.lastmetric {
+			if l.lastmetric == 0 {
+				l.lastmetric = now.Day()
+				return nil
+			}
+			rotate = true
+			tprefix = fmt.Sprintf("%d-%d-%d", mtime.Year(), mtime.Month(), l.lastmetric)
+			l.lastmetric = now.Day()
+		}
+	} else if l.flag&Lsplith == Lsplith {
+		if h != l.lastmetric {
+			if l.lastmetric == 0 {
+				l.lastmetric = h
+				return nil
+			}
+			rotate = true
+			tprefix = fmt.Sprintf("%s.%d", now_date, l.lastmetric)
+			l.lastmetric = h
+		}
+	} else if l.flag&Lsplitm == Lsplitm {
+		if m != l.lastmetric {
+			if l.lastmetric == 0 {
+				l.lastmetric = m
+				return nil
+			}
+			rotate = true
+			tprefix = fmt.Sprintf("%s.%d.%d", now_date, h, l.lastmetric)
+			l.lastmetric = m
+		}
+	}
+	if l.maxsize > 0 {
+		tprefix = fmt.Sprintf("%s.%04d", tprefix, l.lastidx)
+	}
+	l.lastidx = 0
 	if tprefix != "" && rotate {
 		new_name := fmt.Sprintf("%s.%s.%s", prefix, tprefix, suffix)
 		f.Sync()
