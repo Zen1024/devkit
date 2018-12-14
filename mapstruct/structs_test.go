@@ -30,15 +30,21 @@ func TestMapstruct(t *testing.T) {
 			Friends: []*Person{&Person{
 				Age:  10,
 				Name: "gilf",
-			}},
-		}},
+			}}},
+			&Person{
+				Age:  10,
+				Name: "gilf",
+				Friends: []*Person{&Person{
+					Age:  10,
+					Name: "gilf",
+				}}}},
 	}
 	mapval := mapstruct(p, "json")
 	t.Logf("got mapval:%+v", mapval)
-	p2 := &Person{}
+	var p2 = new(Person)
 	if err := scanstruct(mapval, "json", p2); err != nil {
 		t.Fatal(err.Error())
 	}
-	t.Logf("got scanned val:%+v", p2)
+	t.Logf("got scanned val:%+v,gf:%+v", p2, p2.Gf)
 
 }

@@ -84,25 +84,25 @@ func scanstruct(val map[string]interface{}, tag string, dest interface{}) error 
 		return nil
 	}
 	typ := reflect.TypeOf(dest)
-	typelem := typ
 	value := reflect.ValueOf(dest)
-	valelem := value
+
 	typkind := typ.Kind()
 	if typkind != reflect.Ptr {
 		return fmt.Errorf("invalid scan obj type:%s", typkind.String())
 	}
-
-	if !valelem.CanAddr() {
+	if value.IsNil() {
 		return nil
 	}
-
+	valelem := value.Elem()
+	typelem := typ.Elem()
+	fmt.Println(value, valelem, typ.String())
 	fieldlen := valelem.NumField()
+
 	for i := 0; i < fieldlen; i++ {
 		field := valelem.Field(i)
 		typfield := typelem.Field(i)
 		key := typfield.Name
 		tagval := typfield.Tag.Get(tag)
-
 		if tagval != "" {
 			valarr := strings.Split(tagval, ",")
 			key = valarr[0]
@@ -110,22 +110,38 @@ func scanstruct(val map[string]interface{}, tag string, dest interface{}) error 
 			continue
 		}
 		if field.CanSet() {
-			obj, ok := val[key]
+			valobj, ok := val[key]
 			if !ok {
 				continue
 			}
 			kind := field.Kind()
 			if isbasekind(kind) {
-				field.Set(reflect.ValueOf(obj))
+				field.Set(reflect.ValueOf(valobj))
 			} else {
 				if kind == reflect.Ptr {
-					if mpval, ok := obj.(map[string]interface{}); ok {
+					if mpval, ok := valobj.(map[string]interface{}); ok {
 						if err := scanstruct(mpval, tag, field.Interface()); err != nil {
 							return err
 						}
 					}
 				} else if kind == reflect.Slice {
 					//@TODO
+					fieldtyp := typfield.Type.Elem()
+					if mpvals, ok := valobj.([]interface{}); ok {
+						slen := len(mpvals)
+						slice := reflect.MakeSlice(typfield.Type, slen, slen)
+						for _, impval := range mpvals {
+							if mpval, ok := impval.(map[string]interface{}); ok {
+
+								obj := reflect.New(fieldtyp.Elem())
+								if err := scanstruct(mpval, tag, obj.Interface()); err != nil {
+									return err
+								}
+								reflect.Append(slice, obj)
+							}
+						}
+						field.Set(slice)
+					}
 				}
 			}
 		}
@@ -135,5 +151,5 @@ func scanstruct(val map[string]interface{}, tag string, dest interface{}) error 
 }
 
 func isbasekind(kind reflect.Kind) bool {
-	return kind <= reflect.Float64
+	return (kind <= reflect.Float64) || (kind == reflect.String)
 }
