@@ -11,16 +11,46 @@ const (
 )
 
 type BrTree struct {
-	root   *brNode
-	height int
+	root      *brNode
+	emptyNode *brNode
+	height    int
 }
 
 type brNode struct {
+	empty  bool
 	color  int
 	parent *brNode
 	left   *brNode
 	right  *brNode
 	elem   NodeVal
+}
+
+type fakeNode int
+
+func (n fakeNode) Compare(other NodeVal) int {
+	val, _ := other.(fakeNode)
+	return int(n) - int(val)
+}
+
+func (n fakeNode) String() string {
+	return fmt.Sprintf("%4d", n)
+}
+
+func (n fakeNode) EqualMerge(other NodeVal) {}
+
+func newBrTree() *BrTree {
+	emptyNode := &brNode{
+		empty: true,
+		elem:  fakeNode(-100),
+		color: colorBlack,
+	}
+	emptyNode.parent = emptyNode
+	emptyNode.left = emptyNode
+	emptyNode.right = emptyNode
+	return &BrTree{
+		root:      emptyNode,
+		emptyNode: emptyNode,
+	}
 }
 
 func colorStr(s string, color int) string {
@@ -30,12 +60,16 @@ func colorStr(s string, color int) string {
 	return fmt.Sprintf("\x1b[34m%s\x1b[0m", s)
 }
 
+func (t *BrTree) String() string {
+	return t.root.String(0)
+}
+
 func (n *brNode) leftRotate() {
-	if n == nil || n.right == nil {
+	if n.empty {
 		return
 	}
 	nright := n.right
-	if n.parent != nil {
+	if !n.parent.empty {
 		if n.parent.left == n {
 			n.parent.left = nright
 		} else {
@@ -44,7 +78,7 @@ func (n *brNode) leftRotate() {
 	}
 	nright.parent = n.parent
 	n.parent = nright
-	if nright.left != nil {
+	if !nright.left.empty {
 		nright.left.parent = n
 	}
 	n.right = nright.left
@@ -52,11 +86,11 @@ func (n *brNode) leftRotate() {
 }
 
 func (n *brNode) rightRotate() {
-	if n == nil || n.left == nil {
+	if n.empty {
 		return
 	}
 	nleft := n.left
-	if n.parent != nil {
+	if !n.parent.empty {
 		if n.parent.left == n {
 			n.parent.left = nleft
 		} else {
@@ -65,7 +99,7 @@ func (n *brNode) rightRotate() {
 	}
 	nleft.parent = n.parent
 	n.parent = nleft
-	if nleft.right != nil {
+	if !nleft.right.empty {
 		nleft.right.parent = n
 	}
 	n.left = nleft.right
@@ -73,7 +107,7 @@ func (n *brNode) rightRotate() {
 }
 
 func (n *brNode) String(depth int) string {
-	if n == nil {
+	if n.empty {
 		return ""
 	}
 	buf := bytes.NewBufferString("")
@@ -94,7 +128,7 @@ func (n *brNode) String(depth int) string {
 
 //black height from n to leaf
 func (n *brNode) blackHeight(leaf NodeVal) int {
-	if n == nil {
+	if n.empty {
 		return 0
 	}
 	var iterator *brNode
@@ -110,7 +144,7 @@ func (n *brNode) blackHeight(leaf NodeVal) int {
 	h := 0
 	for {
 		//leaf not found
-		if iterator == nil {
+		if iterator.empty {
 			return -1
 		}
 
@@ -137,14 +171,14 @@ func (n *brNode) getleaves() []*brNode {
 }
 
 func (n *brNode) iteratorLeaves(leaves *[]*brNode) {
-	if n.left == nil || n.right == nil {
+	if n.left.empty || n.right.empty {
 		*leaves = append(*leaves, n)
 		return
 	}
-	if n.left != nil {
+	if !n.left.empty {
 		n.left.iteratorLeaves(leaves)
 	}
-	if n.right != nil {
+	if !n.right.empty {
 		n.right.iteratorLeaves(leaves)
 	}
 	return
@@ -164,20 +198,17 @@ func (n *brNode) validBlackHeight() bool {
 }
 
 func (n *brNode) valid() bool {
-	if n == nil {
+	if n.empty {
 		return true
 	}
-	if n.parent == nil && n.color != colorBlack {
+
+	if n.parent.empty && n.color != colorBlack {
 		fmt.Println(1)
 		return false
 	}
 	if n.color == colorRed {
-		if n.left != nil && n.left.color == colorRed {
+		if n.left.color == colorRed || n.right.color == colorRed {
 			fmt.Println(2)
-			return false
-		}
-		if n.right != nil && n.right.color == colorRed {
-			fmt.Println(3)
 			return false
 		}
 	}
@@ -189,7 +220,7 @@ func (n *brNode) valid() bool {
 }
 
 func (t *BrTree) valid() bool {
-	if t == nil || t.root == nil {
+	if t == nil || t.root.empty {
 		return true
 	}
 	return t.root.valid()
@@ -199,10 +230,14 @@ func (t *BrTree) rawInsert(val NodeVal) *brNode {
 	node := &brNode{
 		elem:  val,
 		color: colorRed,
+		left:  t.emptyNode,
+		right: t.emptyNode,
 	}
-	if t.root == nil {
+
+	if t.root.empty {
 		node.color = colorBlack
 		t.root = node
+		node.parent = t.emptyNode
 		return node
 	}
 
@@ -213,7 +248,7 @@ func (t *BrTree) rawInsert(val NodeVal) *brNode {
 			iterator.elem.EqualMerge(val)
 			return nil
 		} else if cmp > 0 {
-			if iterator.left == nil {
+			if iterator.left.empty {
 				node.parent = iterator
 				iterator.left = node
 				return node
@@ -221,7 +256,7 @@ func (t *BrTree) rawInsert(val NodeVal) *brNode {
 				iterator = iterator.left
 			}
 		} else {
-			if iterator.right == nil {
+			if iterator.right.empty {
 				node.parent = iterator
 				iterator.right = node
 				return node
@@ -238,7 +273,7 @@ func (t *BrTree) get(key NodeVal) *brNode {
 	}
 	iterator := t.root
 	for {
-		if iterator == nil {
+		if iterator.empty {
 			return nil
 		}
 		cmp := iterator.elem.Compare(key)
@@ -258,15 +293,15 @@ func (t *BrTree) insertFix(new_node *brNode) {
 	iterator := new_node
 	for {
 		p = iterator.parent
-		if p == nil || p.color == colorBlack {
-			if p == nil {
+		if p.color == colorBlack {
+			if p.empty {
 				iterator.color = colorBlack
 				t.root = iterator
 			}
 			return
 		}
 		pp = p.parent
-		if pp == nil {
+		if pp.empty {
 			p.color = colorBlack
 			t.root = p
 			return
@@ -275,7 +310,7 @@ func (t *BrTree) insertFix(new_node *brNode) {
 		if uncle == p {
 			uncle = pp.right
 		}
-		if uncle != nil && uncle.color == colorRed {
+		if uncle.color == colorRed {
 			uncle.color = colorBlack
 			p.color = colorBlack
 			pp.color = colorRed
@@ -289,7 +324,7 @@ func (t *BrTree) insertFix(new_node *brNode) {
 				pp.rightRotate()
 				p.color = colorBlack
 				pp.color = colorRed
-				if p.parent == nil {
+				if p.parent.empty {
 					t.root = p
 				}
 				return
@@ -301,7 +336,7 @@ func (t *BrTree) insertFix(new_node *brNode) {
 				pp.leftRotate()
 				p.color = colorBlack
 				pp.color = colorRed
-				if p.parent == nil {
+				if p.parent.empty {
 					t.root = p
 				}
 				return
@@ -315,7 +350,6 @@ func (t *BrTree) Insert(val NodeVal) {
 	if t == nil {
 		return
 	}
-
 	new_node := t.rawInsert(val)
 	if new_node != nil {
 		if new_node.color == colorRed {
@@ -327,15 +361,15 @@ func (t *BrTree) Insert(val NodeVal) {
 }
 
 func (n *brNode) minimum() *brNode {
-	if n == nil {
+	if n.empty {
 		return nil
 	}
-	if n.left == nil {
+	if n.left.empty {
 		return n
 	}
 	iterator := n
 	for {
-		if iterator.left == nil {
+		if iterator.left.empty {
 			return iterator
 		}
 		iterator = iterator.left
@@ -343,14 +377,14 @@ func (n *brNode) minimum() *brNode {
 }
 
 func (n *brNode) replaceBySub(sub *brNode) *brNode {
-	if n == nil {
+	if n.empty {
 		return sub
 	}
 	if sub != nil {
 		sub.parent = n.parent
 	}
 	p := n.parent
-	if p != nil {
+	if !p.empty {
 		if p.left == n {
 			p.left = sub
 		} else {
@@ -361,54 +395,147 @@ func (n *brNode) replaceBySub(sub *brNode) *brNode {
 	return sub
 }
 
-func (t *BrTree) rawDelete(val NodeVal) {
+func (t *BrTree) Delete(val NodeVal) {
 	node := t.get(val)
 	if node == nil {
 		return
 	}
+	if node.parent.empty {
+		if node.left == node.right {
+			node.parent = nil
+			t.root = t.emptyNode
+		}
+		return
+	}
+
 	orig := node
-	orig_color := node.color
-	var del_node, del_node_p *brNode
-	isroot := (node.parent == nil)
-	if node.left == nil {
+	orig_color := orig.color
+	var del_node *brNode
+
+	p := node.parent
+	if node.left.empty {
 		del_node = node.right
-		del_node_p = node.parent
-		new_node := node.replaceBySub(del_node)
-		if isroot {
-			t.root = new_node
-		}
-	} else if node.right == nil {
+		node.replaceBySub(node.right)
+		node.left.parent = p
+
+	} else if node.right.empty {
 		del_node = node.left
-		del_node_p = node.parent
-		new_node := node.replaceBySub(del_node)
-		if isroot {
-			t.root = new_node
-		}
+		node.replaceBySub(node.left)
+		node.right.parent = p
 	} else {
 		orig = node.right.minimum()
 		orig_color = orig.color
 		del_node = orig.right
-		del_node_p = orig.parent
-		orig.replaceBySub(orig.right)
-		if node.right != nil {
+		if orig.parent == node {
+			del_node.parent = orig
+		} else {
+			orig.replaceBySub(orig.right)
 			orig.right = node.right
-			node.right.parent = orig
+			orig.right.parent = orig
 		}
-		new_node := node.replaceBySub(orig)
+		node.replaceBySub(orig)
 		orig.left = node.left
-		if node.left != nil {
-			node.left.parent = orig
-		}
+		orig.left.parent = orig
 		orig.color = node.color
-		if isroot {
-			t.root = new_node
-		}
+
 	}
 	if orig_color == colorBlack {
-		t.fixDelete(del_node, del_node_p)
+		t.fixDelete(del_node, val)
+		t.emptyNode.parent = t.emptyNode
 	}
 }
 
-func (t *BrTree) fixDelete(node, pnode *brNode) {
+func (t *BrTree) fixDelete(del_node *brNode, val NodeVal) {
+	//新填充的为红色并且:
+	//为原来的子节点,所以只需变色
+	iterator := del_node
+	for {
+		if iterator.color == colorRed {
+			iterator.color = colorBlack
+			return
+		}
+		p := iterator.parent
+		bro := p.left
+		if bro == iterator {
+			bro = p.right
+		}
+		if bro == p.right {
+			if bro.color == colorRed {
+				if p.parent.empty {
+					t.root = iterator
+				}
+				p.leftRotate()
+				p.color = colorRed
+				bro.color = colorBlack
+				continue
+			}
 
+			if bro.right.color == colorRed {
+				if p.parent.empty {
+					t.root = iterator
+				}
+				p.leftRotate()
+				bro.color = p.color
+				p.color = colorBlack
+				bro.right.color = colorBlack
+				if bro.parent.empty {
+					t.root = bro
+					bro.color = colorBlack
+				}
+				return
+			}
+
+			if bro.left.color == colorRed {
+				bro.rightRotate()
+				bro.parent.color = colorBlack
+				bro.color = colorRed
+				continue
+			}
+
+			if bro.left.color == colorBlack && bro.right.color == colorBlack {
+				bro.color = colorRed
+				iterator = p
+				continue
+			}
+		} else {
+			if bro.color == colorRed {
+				if p.parent.empty {
+					t.root = iterator
+				}
+				p.rightRotate()
+				p.color = colorRed
+				bro.color = colorBlack
+				continue
+			}
+
+			if bro.left.color == colorRed {
+				if p.parent.empty {
+					t.root = iterator
+				}
+				p.rightRotate()
+				bro.color = p.color
+				p.color = colorBlack
+
+				bro.left.color = colorBlack
+				if bro.parent.empty {
+					t.root = bro
+					bro.color = colorBlack
+				}
+				return
+			}
+
+			if bro.right.color == colorRed {
+				bro.leftRotate()
+				bro.parent.color = colorBlack
+				bro.color = colorRed
+				continue
+			}
+
+			if bro.left.color == colorBlack && bro.right.color == colorBlack {
+				bro.color = colorRed
+				iterator = p
+				continue
+			}
+		}
+	}
 }

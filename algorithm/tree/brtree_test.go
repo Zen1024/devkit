@@ -31,17 +31,26 @@ func randArr(length, max int) []intNode {
 	return re
 }
 
-func TestInsert(t *testing.T) {
+func TestInsertDelete(t *testing.T) {
 	for {
-		array := randArr(20, 1000)
-		tree := new(BrTree)
+		array := randArr(10, 1000)
+		tree := newBrTree()
 		for _, elem := range array {
 			tree.Insert(elem)
+			if !tree.root.valid() {
+				fmt.Println(array)
+				fmt.Println(tree.String())
+				return
+			}
 		}
-		if !tree.root.valid() {
-			fmt.Println(array)
-			fmt.Println(tree.root.String(0))
-			return
+		for _, elem := range array {
+			tree.Delete(elem)
+			if !tree.root.valid() {
+				fmt.Println(array)
+				fmt.Println(tree.String())
+				return
+			}
 		}
+
 	}
 }
